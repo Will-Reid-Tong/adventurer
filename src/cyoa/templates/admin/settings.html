@@ -1,0 +1,22 @@
+<!doctype html>
+<title>Settings</title>
+<h1>Settings</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form method="post">
+  <label>
+    Start page
+    <select name="start_page_id">
+      {% for page in pages %}
+      <option value="{{ page['id'] }}"
+        {% if selected == page['id'] %}selected{% endif %}>
+        {{ page['title'] }}
+      </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    New password
+    <input name="password" type="password">
+  </label>
+  <button type="submit">Save</button>
+</form>

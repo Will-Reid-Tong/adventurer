@@ -1,0 +1,63 @@
+<!doctype html>
+<title>Adventure map</title>
+<h1>Adventure map</h1>
+{% if graph['root'] is none %}
+<p>No start page is set.</p>
+{% else %}
+<div class="map"
+     style="width: {{ layout['width'] }}px; height: {{ layout['height'] }}px;">
+  <svg class="map__edges" width="{{ layout['width'] }}" height="{{ layout['height'] }}"
+       viewBox="0 0 {{ layout['width'] }} {{ layout['height'] }}" aria-hidden="true">
+    <defs>
+      <marker id="map-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z"></path>
+      </marker>
+    </defs>
+    {% for edge in layout['edges'] %}
+    <line class="map__edge{% if edge['reentrant'] %} map__edge--reentrant{% endif %}"
+          x1="{{ edge['x1'] }}" y1="{{ edge['y1'] }}"
+          x2="{{ edge['x2'] }}" y2="{{ edge['y2'] }}"
+          marker-end="url(#map-arrow)"></line>
+    {% endfor %}
+  </svg>
+  {% for node in layout['nodes'] %}
+  <a class="node node--{{ node['type'] }}"
+     style="left: {{ node['x'] }}px; top: {{ node['y'] }}px;
+            width: {{ layout['card_width'] }}px;
+            min-height: {{ layout['card_height'] }}px;"
+     href="{{ url_for('admin_edit_page', page_id=node['id']) }}">
+    {% if node['image_id'] is not none %}
+    <img class="node__thumb" alt=""
+         src="{{ url_for('serve_image', image_id=node['image_id']) }}">
+    {% endif %}
+    <span class="node__title">{{ node['title'] }}</span>
+    <span class="node__type">{{ node['type'] }}</span>
+    {% for edge in layout['edges'] if edge['page_id'] == node['id'] %}
+    <span class="edge{% if edge['reentrant'] %} edge--reentrant{% endif %}">
+      {% if edge['weight'] is not none %}{{ edge['weight'] }}%{% else %}{{ edge['label'] }}{% endif %}
+    </span>
+    {% endfor %}
+  </a>
+  {% endfor %}
+</div>
+<style>
+  .map { position: relative; }
+  .map__edges { position: absolute; inset: 0; z-index: 0; }
+  .map__edge { stroke: #94a3b8; stroke-width: 2; fill: none; }
+  .map__edge--reentrant { stroke: #b45309; stroke-dasharray: 6 5; }
+  .map__edges marker path { fill: #94a3b8; }
+  .node { position: absolute; z-index: 1; box-sizing: border-box;
+          display: inline-flex; flex-wrap: wrap; gap: .35rem .5rem;
+          align-items: center; padding: .5rem .75rem; border: 2px solid #888;
+          border-radius: .5rem; text-decoration: none; color: inherit;
+          background: #fff; }
+  .node--choice { border-color: #2563eb; background: #dbeafe; }
+  .node--chance { border-color: #d97706; background: #fef3c7; }
+  .node--ending { border-color: #6b7280; background: #f3f4f6; }
+  .node__thumb { width: 2.5rem; height: 2.5rem; object-fit: cover; border-radius: .25rem; }
+  .node__title { font-weight: 600; }
+  .edge { font-size: .8rem; color: #444; }
+  .edge--reentrant { border-bottom: 1px dashed #444; }
+</style>
+{% endif %}

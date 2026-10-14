@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Choose Your Own Adventure</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto;
+           padding: 0 1rem; line-height: 1.5; }
+    #image { max-width: 100%; height: auto; }
+    #options { display: flex; flex-direction: column; gap: .5rem; margin-top: 1rem; }
+    button { font: inherit; padding: .5rem .75rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <main id="app">
+    <p id="status">Loading…</p>
+  </main>
+
+  <script>
+    const app = document.getElementById("app");
+
+    async function fetchJSON(url, options) {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        throw new Error("Request failed: " + response.status);
+      }
+      return response.json();
+    }
+
+    function renderPage(page) {
+      app.replaceChildren();
+
+      const title = document.createElement("h1");
+      title.textContent = page.title;
+      app.append(title);
+
+      if (page.image_url) {
+        const image = document.createElement("img");
+        image.id = "image";
+        image.src = page.image_url;
+        image.alt = page.title;
+        app.append(image);
+      }
+
+      const body = document.createElement("p");
+      body.textContent = page.body_text;
+      app.append(body);
+
+      const options = document.createElement("div");
+      options.id = "options";
+
+      if (page.type === "choice") {
+        for (const option of page.options) {
+          const button = document.createElement("button");
+          button.textContent = option.label;
+          button.addEventListener("click", () => {
+            showPage(option.target_page_id);
+          });
+          options.append(button);
+        }
+      } else if (page.type === "chance") {
+        const button = document.createElement("button");
+        button.textContent = "Roll";
+        button.addEventListener("click", () => rollPage(page.id));
+        options.append(button);
+      } else if (page.type === "ending") {
+        const end = document.createElement("p");
+        end.textContent = "The End";
+        app.append(end);
+
+        const restart = document.createElement("button");
+        restart.textContent = "Restart";
+        restart.addEventListener("click", start);
+        options.append(restart);
+      }
+
+      app.append(options);
+    }
+
+    async function showPage(pageId) {
+      app.replaceChildren(Object.assign(document.createElement("p"),
+        { textContent: "Loading…" }));
+      const page = await fetchJSON("/api/pages/" + pageId);
+      renderPage(page);
+    }
+
+    async function rollPage(pageId) {
+      const result = await fetchJSON("/api/pages/" + pageId + "/roll", {
+        method: "POST",
+      });
+      await showPage(result.page_id);
+    }
+
+    async function start() {
+      const { page_id: pageId } = await fetchJSON("/api/start");
+      if (pageId === null) {
+        app.replaceChildren(Object.assign(document.createElement("p"),
+          { textContent: "No start page is set." }));
+        return;
+      }
+      await showPage(pageId);
+    }
+
+    start().catch((error) => {
+      app.replaceChildren(Object.assign(document.createElement("p"),
+        { textContent: error.message }));
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+<!doctype html>
+<title>{% if page %}Edit page{% else %}New page{% endif %}</title>
+<h1>{% if page %}Edit page{% else %}New page{% endif %}</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form method="post" enctype="multipart/form-data">
+  <label>
+    Title
+    <input name="title" value="{{ page['title'] if page else '' }}">
+  </label>
+  <label>
+    Type
+    <select name="type">
+      {% for page_type in page_types %}
+      <option value="{{ page_type }}"
+        {% if page and page['type'] == page_type %}selected{% endif %}>
+        {{ page_type }}
+      </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Body
+    <textarea name="body_text">{{ page['body_text'] if page else '' }}</textarea>
+  </label>
+  <label>
+    Image
+    <input type="file" name="image" accept="{{ image_types | join(',') }}"
+           onchange="previewImage(event)">
+  </label>
+  <img id="image-preview" alt=""
+       style="max-width: 12rem; margin-top: .5rem;"
+       {% if page and page['image_id'] is not none %}
+       src="{{ url_for('serve_image', image_id=page['image_id']) }}"
+       {% else %}
+       hidden
+       {% endif %}>
+  <button type="submit">Save</button>
+</form>
+<script>
+  function previewImage(event) {
+    const preview = document.getElementById("image-preview");
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    preview.src = URL.createObjectURL(file);
+    preview.hidden = false;
+  }
+</script>

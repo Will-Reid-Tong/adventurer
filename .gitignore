@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.ty/
+
+# Local data (SQLite BLOBs live here)
+data/
+*.db
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

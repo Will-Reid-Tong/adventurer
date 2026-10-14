@@ -1,0 +1,25 @@
+# Version control and CI
+.git
+.gitignore
+.github
+
+# Python / uv environments and caches
+.venv
+__pycache__
+**/__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+.ty
+
+# Local state and files not needed in the image
+data
+*.db
+tests
+docs
+
+# Docker metadata (not copied into the image)
+Dockerfile
+.dockerignore
+docker-compose*.yml
