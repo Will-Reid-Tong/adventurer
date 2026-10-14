@@ -12,7 +12,11 @@ venv/
 
 # Local data (SQLite BLOBs live here)
 data/
+backups/
 *.db
+
+# Local secrets (compose reads this for ADMIN_USERNAME/ADMIN_PASSWORD)
+.env
 
 # OS / editor
 .DS_Store
