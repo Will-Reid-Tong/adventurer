@@ -9,14 +9,14 @@ Pins the Issue #7 acceptance criteria:
 
 The routes are server-rendered Jinja and sit behind the admin login (#6), so
 the test seeds ``admin_username`` / ``admin_password_hash`` through the
-``cyoa.db`` seam and logs in before touching ``/admin/*``.
+``adventurer.db`` seam and logs in before touching ``/admin/*``.
 """
 
 from pathlib import Path
 
 from werkzeug.security import generate_password_hash
 
-from cyoa import create_app, db
+from adventurer import create_app, db
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "correct horse battery staple"

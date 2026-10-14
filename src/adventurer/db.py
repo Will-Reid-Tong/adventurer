@@ -25,7 +25,9 @@ def init_db(path: str) -> None:
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    schema = resources.files("cyoa").joinpath("schema.sql").read_text(encoding="utf-8")
+    schema = (
+        resources.files("adventurer").joinpath("schema.sql").read_text(encoding="utf-8")
+    )
     conn = connect(path)
     try:
         conn.executescript(schema)

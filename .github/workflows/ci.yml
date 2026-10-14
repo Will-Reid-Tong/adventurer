@@ -69,7 +69,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ghcr.io/will-reid-tong/choose-your-own-adventure
+          images: ghcr.io/will-reid-tong/adventurer
           tags: |
             type=raw,value=latest
             type=sha

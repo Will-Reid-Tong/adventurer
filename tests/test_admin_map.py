@@ -19,7 +19,7 @@ Pins the Issue #10 acceptance criteria:
   ``<a href="/admin/pages/<id>/edit">`` card, ordered by depth; choice edges
   show the option label and chance edges show the weight as ``40%``.
 - The route sits behind the admin login (#6), so the test seeds
-  ``admin_username`` / ``admin_password_hash`` through the ``cyoa.db`` seam and
+  ``admin_username`` / ``admin_password_hash`` through the ``adventurer.db`` seam and
   logs in before touching ``/admin/map``.
 
 The fixture graph (root = page 1)::
@@ -39,7 +39,7 @@ from urllib.parse import urlsplit
 from werkzeug.security import generate_password_hash
 from werkzeug.test import TestResponse
 
-from cyoa import create_app, db
+from adventurer import create_app, db
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "correct horse battery staple"
@@ -67,7 +67,7 @@ def _table_names(conn) -> set[str]:
 
 
 def _seed_graph(db_path: str) -> None:
-    """Write the diamond-plus-cycle fixture through the ``cyoa.db`` seam."""
+    """Write the diamond-plus-cycle fixture through the ``adventurer.db`` seam."""
     db.init_db(db_path)
     with db.connect(db_path) as conn:
         conn.execute(
@@ -154,7 +154,7 @@ def test_admin_graph_map_seam(tmp_path: Path, monkeypatch) -> None:
     assert b"60%" in response.data
 
     # --- the pure build_graph() seam --------------------------------------
-    from cyoa.graph import build_graph
+    from adventurer.graph import build_graph
 
     with db.connect(db_path) as conn:
         tables_before = _table_names(conn)

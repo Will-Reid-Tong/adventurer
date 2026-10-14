@@ -1,4 +1,4 @@
-"""Tests for the raw-SQL data layer seam: ``cyoa.db.init_db`` and ``cyoa.db.connect``.
+"""Tests for the raw-SQL data layer seam: ``adventurer.db.init_db`` and ``adventurer.db.connect``.
 
 These pin the Issue #2 acceptance criteria: idempotent schema application and
 constraint enforcement (CHECK, ON DELETE CASCADE, ON DELETE SET NULL).
@@ -12,10 +12,10 @@ import pytest
 
 
 def test_data_layer_seam(tmp_path: Path) -> None:
-    assert importlib.util.find_spec("cyoa.db") is not None, (
-        "cyoa.db seam module is not implemented yet"
+    assert importlib.util.find_spec("adventurer.db") is not None, (
+        "adventurer.db seam module is not implemented yet"
     )
-    from cyoa import db
+    from adventurer import db
 
     db_path = str(tmp_path / "app.db")
 

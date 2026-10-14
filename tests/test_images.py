@@ -19,7 +19,7 @@ from pathlib import Path
 
 from werkzeug.security import generate_password_hash
 
-from cyoa import create_app, db
+from adventurer import create_app, db
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "correct horse battery staple"

@@ -11,7 +11,7 @@ Pins the Issue #3 JSON contract the player frontend consumes:
 
 from pathlib import Path
 
-from cyoa import create_app, db
+from adventurer import create_app, db
 
 
 def test_player_api_page_json_seam(tmp_path: Path, monkeypatch) -> None:

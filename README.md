@@ -1,7 +1,7 @@
-# Choose Your Own Adventure
+# Adventurer
 
-A small self-hosted choose-your-own-adventure engine: an SQLite-backed Flask app
-with a vanilla-JS player and a server-rendered admin.
+Adventurer is a small self-hosted choose-your-own-adventure engine: an
+SQLite-backed Flask app with a vanilla-JS player and a server-rendered admin.
 
 ## Requirements
 
@@ -12,7 +12,7 @@ with a vanilla-JS player and a server-rendered admin.
 
 ```sh
 uv sync
-uv run gunicorn -w 2 -b 0.0.0.0:8000 'cyoa:create_app()'
+uv run gunicorn -w 2 -b 0.0.0.0:8000 'adventurer:create_app()'
 ```
 
 On first start the database is initialized and an admin login is seeded from
@@ -59,6 +59,6 @@ uv run ty check
 
 ## Layout
 
-- `src/cyoa/` — application package (`create_app()` factory).
+- `src/adventurer/` — application package (`create_app()` factory).
 - `tests/` — pytest suite.
 - `docs/decisions.md` — settled design decisions.

@@ -12,7 +12,7 @@ import os
 
 from werkzeug.security import generate_password_hash
 
-from cyoa import db
+from adventurer import db
 
 DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_PASSWORD = "admin"

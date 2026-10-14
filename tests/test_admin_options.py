@@ -18,7 +18,7 @@ Per-type rules:
 - ``ending``: zero options; any add is rejected.
 
 A rejected mutation leaves the database unchanged and renders a visible error.
-The test seeds the admin credential and pages through the ``cyoa.db`` seam and
+The test seeds the admin credential and pages through the ``adventurer.db`` seam and
 logs in before touching ``/admin/*``.
 """
 
@@ -27,7 +27,7 @@ from typing import Any
 
 from werkzeug.security import generate_password_hash
 
-from cyoa import create_app, db
+from adventurer import create_app, db
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "correct horse battery staple"

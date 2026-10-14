@@ -5,10 +5,10 @@ Settled decisions for the project, recorded for reference.
 ## Stack
 
 - **uv** for dependency management and the project environment.
-- **Flask** app factory (`cyoa:create_app()`) so the app can be built for tests
+- **Flask** app factory (`adventurer:create_app()`) so the app can be built for tests
   and for gunicorn without import-time side effects.
 - **gunicorn** as the production WSGI server.
-- Python **3.14**, `src` layout, package `cyoa`.
+- Python **3.14**, `src` layout, package `adventurer`.
 
 ## Data
 

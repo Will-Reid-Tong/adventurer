@@ -17,9 +17,9 @@ from flask import (
 from werkzeug.datastructures import FileStorage
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from cyoa import db, player
-from cyoa.bootstrap import bootstrap_admin
-from cyoa.constants import (
+from adventurer import db, player
+from adventurer.bootstrap import bootstrap_admin
+from adventurer.constants import (
     ALLOWED_IMAGE_TYPES,
     ALLOWED_PAGE_TYPES,
     ERR_CHOICE_WEIGHT,
@@ -42,7 +42,7 @@ from cyoa.constants import (
     PAGE_TYPES,
     WEIGHT_TOTAL,
 )
-from cyoa.graph import build_graph, layout_graph
+from adventurer.graph import build_graph, layout_graph
 
 
 class ImageUploadError(Exception):

@@ -50,4 +50,4 @@ USER app
 EXPOSE 8000
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:8000", "cyoa:create_app()"]
+CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:8000", "adventurer:create_app()"]

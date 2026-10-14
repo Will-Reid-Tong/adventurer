@@ -10,7 +10,7 @@ import sqlite3
 from collections import deque
 from typing import Any
 
-from cyoa.db import get_start_page_id
+from adventurer.db import get_start_page_id
 
 # Fixed card metrics for the vertical HTML map. The renderer sizes its cards
 # and connector endpoints from these so the SVG lines land on the cards.

@@ -10,7 +10,7 @@ Pins the Issue #11 contract:
 
 from pathlib import Path
 
-from cyoa import create_app
+from adventurer import create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

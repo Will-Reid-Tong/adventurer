@@ -12,7 +12,7 @@ Pins the Issue #9 acceptance criteria:
   longer logs in and the new one does.
 
 The route sits behind the admin login (#6), so the test seeds
-``admin_username`` / ``admin_password_hash`` through the ``cyoa.db`` seam and
+``admin_username`` / ``admin_password_hash`` through the ``adventurer.db`` seam and
 logs in before touching ``/admin/settings``. Form fields are ``start_page_id``
 and ``password``.
 """
@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.test import TestResponse
 
-from cyoa import create_app, db
+from adventurer import create_app, db
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "correct horse battery staple"

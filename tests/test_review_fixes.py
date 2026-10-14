@@ -12,9 +12,9 @@ from pathlib import Path
 
 from werkzeug.security import generate_password_hash
 
-from cyoa import create_app, db
-from cyoa.bootstrap import bootstrap_admin
-from cyoa.graph import build_graph
+from adventurer import create_app, db
+from adventurer.bootstrap import bootstrap_admin
+from adventurer.graph import build_graph
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "correct horse battery staple"

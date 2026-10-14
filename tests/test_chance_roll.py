@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from cyoa import create_app, db
+from adventurer import create_app, db
 
 
 def test_seeded_chance_roll_seam(tmp_path: Path, monkeypatch) -> None:
@@ -77,7 +77,7 @@ def test_seeded_chance_roll_seam(tmp_path: Path, monkeypatch) -> None:
     assert client.post("/api/pages/9999/roll").status_code == 404
 
     # Pure function: same seed, same target.
-    from cyoa.player import roll
+    from adventurer.player import roll
 
     options = [(2, 70), (3, 30)]
     assert roll(options, random.Random(1234)) == 3

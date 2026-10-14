@@ -10,8 +10,8 @@ set -eu
 python - <<'PY'
 import os
 
-from cyoa import db
-from cyoa.bootstrap import bootstrap_admin
+from adventurer import db
+from adventurer.bootstrap import bootstrap_admin
 
 path = os.environ.get("DATABASE_PATH", "/data/app.db")
 db.init_db(path)
