@@ -18,4 +18,13 @@ db.init_db(path)
 bootstrap_admin(path)
 PY
 
+# gunicorn 26 creates a control socket under $XDG_RUNTIME_DIR, falling back to
+# $HOME/.gunicorn. The app user's home is /app, which is not writable, so point
+# the runtime dir at a per-user directory under /tmp instead. This also keeps
+# the control socket working when the container user is overridden.
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/adventurer}"
+mkdir -p "$RUNTIME_DIR"
+chmod 700 "$RUNTIME_DIR"
+export XDG_RUNTIME_DIR="$RUNTIME_DIR"
+
 exec "$@"
