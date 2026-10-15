@@ -87,9 +87,19 @@ def _is_upload(file: FileStorage | None) -> bool:
 
 
 def _render_page_form(
-    page: Any, error: str | None, *, status: int = 200
+    page: Any,
+    error: str | None,
+    *,
+    options: list[Any] | None = None,
+    pages: list[Any] | None = None,
+    status: int = 200,
 ) -> tuple[str, int]:
-    """Render the page create/edit form with the shared type/format constants."""
+    """Render the page create/edit form with the shared type/format constants.
+
+    ``pages`` powers the target dropdown in the options panel; ``options`` is
+    the current page's existing options, used to render inline edit forms on
+    the edit page.
+    """
     return (
         render_template(
             "admin/page_form.html",
@@ -97,6 +107,8 @@ def _render_page_form(
             error=error,
             page_types=PAGE_TYPES,
             image_types=IMAGE_TYPES,
+            options=options or [],
+            pages=pages or [],
         ),
         status,
     )
@@ -272,11 +284,11 @@ def create_app() -> Flask:
 
     @app.route("/admin/pages/new", methods=["GET", "POST"])
     def admin_new_page() -> Any:
+        conn = db.get_db()
         if request.method == "POST":
             page_type = request.form.get("type", "")
             if page_type not in ALLOWED_PAGE_TYPES:
                 return _render_page_form(None, ERR_INVALID_PAGE_TYPE)
-            conn = db.get_db()
             image_id: int | None = None
             file = request.files.get("image")
             if _is_upload(file):
@@ -285,7 +297,7 @@ def create_app() -> Flask:
                     image_id = _insert_image(conn, file)
                 except ImageUploadError as exc:
                     return _render_page_form(None, exc.message, status=exc.status)
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT INTO pages (type, title, body_text, image_id, position) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (
@@ -298,9 +310,34 @@ def create_app() -> Flask:
                     ).fetchone()[0],
                 ),
             )
+            new_page_id = int(cursor.lastrowid or 0)
+            # A valid initial option (target_page_id provided) is created in
+            # the same transaction so the operator can build a page + its
+            # first option in one POST. Invalid / blank options are silently
+            # skipped — the page is still created and the operator can add
+            # options on the edit page.
+            option_target_raw = (request.form.get("target_page_id") or "").strip()
+            if option_target_raw:
+                values, _error = _parse_option(page_type, request.form)
+                if values is not None:
+                    conn.execute(
+                        "INSERT INTO options "
+                        "(page_id, target_page_id, label, weight, position) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (
+                            new_page_id,
+                            values["target_page_id"],
+                            values["label"],
+                            values["weight"],
+                            0,
+                        ),
+                    )
             conn.commit()
             return redirect(url_for("admin_pages"))
-        return _render_page_form(None, None)
+        pages_rows = conn.execute(
+            "SELECT id, title FROM pages ORDER BY position, id"
+        ).fetchall()
+        return _render_page_form(None, None, pages=pages_rows)
 
     @app.route("/admin/pages/<int:page_id>/edit", methods=["GET", "POST"])
     def admin_edit_page(page_id: int) -> Any:
@@ -337,7 +374,15 @@ def create_app() -> Flask:
             )
             conn.commit()
             return redirect(url_for("admin_pages"))
-        return _render_page_form(page, None)
+        options_rows = conn.execute(
+            "SELECT id, target_page_id, label, weight, position FROM options "
+            "WHERE page_id = ? ORDER BY position, id",
+            (page_id,),
+        ).fetchall()
+        pages_rows = conn.execute(
+            "SELECT id, title FROM pages ORDER BY position, id"
+        ).fetchall()
+        return _render_page_form(page, None, options=options_rows, pages=pages_rows)
 
     @app.post("/admin/pages/<int:page_id>/delete")
     def admin_delete_page(page_id: int) -> Any:

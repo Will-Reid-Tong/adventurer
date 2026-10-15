@@ -34,8 +34,73 @@
        {% else %}
        hidden
        {% endif %}>
+  {% if not page %}
+  <fieldset class="initial-option">
+    <legend>Initial option (optional)</legend>
+    <label>Label
+      <input name="label">
+    </label>
+    <label>Target
+      <select name="target_page_id">
+        {%- for p in pages %}
+        <option value="{{ p['id'] }}">{{ p['title'] }}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    <label>Weight
+      <input name="weight">
+    </label>
+  </fieldset>
+  {% endif %}
   <button type="submit">Save</button>
 </form>
+{% if page and page['type'] != 'ending' %}
+<section class="options">
+  <h2>Options</h2>
+  {% for option in options %}
+  <article class="option">
+    <form method="post" action="{{ url_for('admin_edit_option', page_id=page['id'], option_id=option['id']) }}">
+      <label>Label
+        <input name="label" value="{{ option['label'] or '' }}">
+      </label>
+      <label>Target
+        <select name="target_page_id">
+          {%- for p in pages %}
+          <option value="{{ p['id'] }}"{% if p['id'] == option['target_page_id'] %} selected{% endif %}>{{ p['title'] }}</option>
+          {%- endfor %}
+        </select>
+      </label>
+      <label>Weight
+        <input name="weight" value="{{ option['weight'] if option['weight'] is not none else '' }}">
+      </label>
+      <button type="submit">Save</button>
+    </form>
+    <form method="post" action="{{ url_for('admin_delete_option', page_id=page['id'], option_id=option['id']) }}">
+      <button type="submit">Delete</button>
+    </form>
+  </article>
+  {% endfor %}
+  <article class="option-add">
+    <h3>Add option</h3>
+    <form method="post" action="{{ url_for('admin_add_option', page_id=page['id']) }}">
+      <label>Label
+        <input name="label">
+      </label>
+      <label>Target
+        <select name="target_page_id">
+          {%- for p in pages %}
+          <option value="{{ p['id'] }}">{{ p['title'] }}</option>
+          {%- endfor %}
+        </select>
+      </label>
+      <label>Weight
+        <input name="weight">
+      </label>
+      <button type="submit">Add</button>
+    </form>
+  </article>
+</section>
+{% endif %}
 <script>
   function previewImage(event) {
     const preview = document.getElementById("image-preview");
