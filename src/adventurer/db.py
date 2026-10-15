@@ -62,6 +62,20 @@ def get_start_page_id(conn: sqlite3.Connection) -> int | None:
     return None if value is None else int(value)
 
 
+def resolve_start_page_id(conn: sqlite3.Connection) -> int | None:
+    """Return the entry page: the configured start page, else the first page.
+
+    Without an explicit ``start_page_id`` an adventure that has pages is still
+    playable: fall back to the first page by ``(position, id)``. Only a database
+    with no pages at all has no entry point.
+    """
+    configured = get_start_page_id(conn)
+    if configured is not None:
+        return configured
+    row = conn.execute("SELECT id FROM pages ORDER BY position, id LIMIT 1").fetchone()
+    return None if row is None else int(row["id"])
+
+
 def database_path() -> str:
     """Resolve the database path from ``DATABASE_PATH`` with a dev default."""
     return os.environ.get("DATABASE_PATH", DEFAULT_DATABASE_PATH)

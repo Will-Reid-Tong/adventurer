@@ -187,13 +187,13 @@ def create_app() -> Flask:
 
     @app.get("/")
     def index() -> Any:
-        if db.get_start_page_id(db.get_db()) is None:
+        if db.resolve_start_page_id(db.get_db()) is None:
             return redirect(url_for("login"))
         return render_template("player.html")
 
     @app.get("/api/start")
     def api_start() -> Any:
-        return jsonify({"page_id": db.get_start_page_id(db.get_db())})
+        return jsonify({"page_id": db.resolve_start_page_id(db.get_db())})
 
     @app.get("/api/pages/<int:page_id>")
     def api_page(page_id: int) -> Any:

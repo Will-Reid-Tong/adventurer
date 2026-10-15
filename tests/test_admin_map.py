@@ -198,3 +198,30 @@ def test_admin_graph_map_seam(tmp_path: Path, monkeypatch) -> None:
     # Forward edges are not marked re-entrant.
     forward = [edge for edge in edges if edge not in back_edges]
     assert all(edge["reentrant"] is False for edge in forward)
+
+
+def test_graph_root_falls_back_to_first_page_when_unconfigured(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from adventurer.graph import build_graph
+
+    db_path = str(tmp_path / "app.db")
+    db.init_db(db_path)
+    with db.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (1, 'choice', 'First', 'First.', 0)"
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (2, 'ending', 'Second', 'Second.', 1)"
+        )
+
+    monkeypatch.setenv("DATABASE_PATH", db_path)
+
+    # The map's root matches the quiz's entry point: with no explicit start
+    # page, the first page (by position, id) anchors the graph.
+    with db.connect(db_path) as conn:
+        graph = build_graph(conn)
+    assert graph["root"] == 1
+    assert {node["id"] for node in graph["nodes"]} == {1, 2}

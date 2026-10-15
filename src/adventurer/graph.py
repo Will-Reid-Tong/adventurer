@@ -10,7 +10,7 @@ import sqlite3
 from collections import deque
 from typing import Any
 
-from adventurer.db import get_start_page_id
+from adventurer.db import resolve_start_page_id
 
 # Fixed card metrics for the vertical HTML map. The renderer sizes its cards
 # and connector endpoints from these so the SVG lines land on the cards.
@@ -33,7 +33,7 @@ def build_graph(conn: sqlite3.Connection) -> dict[str, Any]:
     options = conn.execute(
         "SELECT page_id, target_page_id, label, weight FROM options"
     ).fetchall()
-    root = get_start_page_id(conn)
+    root = resolve_start_page_id(conn)
 
     outgoing: dict[int, list[int]] = {}
     for option in options:

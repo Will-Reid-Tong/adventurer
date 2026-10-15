@@ -47,18 +47,19 @@ def test_player_api_page_json_seam(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_PATH", db_path)
     client = create_app().test_client()
 
-    # Unset start page -> explicit null.
-    response = client.get("/api/start")
-    assert response.status_code == 200
-    assert response.get_json() == {"page_id": None}
-
-    with db.connect(db_path) as conn:
-        conn.execute("INSERT INTO settings (key, value) VALUES ('start_page_id', '1')")
-
-    # Configured start page -> its id.
+    # Unset start page -> the first page is the default entry point, so an
+    # adventure with content is playable before an admin picks a start page.
     response = client.get("/api/start")
     assert response.status_code == 200
     assert response.get_json() == {"page_id": 1}
+
+    with db.connect(db_path) as conn:
+        conn.execute("INSERT INTO settings (key, value) VALUES ('start_page_id', '2')")
+
+    # A configured start page overrides that default.
+    response = client.get("/api/start")
+    assert response.status_code == 200
+    assert response.get_json() == {"page_id": 2}
 
     # Choice page -> its options, plus the image contract.
     response = client.get("/api/pages/1")
@@ -90,3 +91,14 @@ def test_player_api_page_json_seam(tmp_path: Path, monkeypatch) -> None:
     # Unknown page id -> 404.
     response = client.get("/api/pages/9999")
     assert response.status_code == 404
+
+
+def test_player_api_start_is_null_when_no_pages(tmp_path: Path, monkeypatch) -> None:
+    db_path = str(tmp_path / "app.db")
+    db.init_db(db_path)
+    monkeypatch.setenv("DATABASE_PATH", db_path)
+
+    response = create_app().test_client().get("/api/start")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"page_id": None}
