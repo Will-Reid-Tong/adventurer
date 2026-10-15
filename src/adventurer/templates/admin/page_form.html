@@ -42,15 +42,17 @@
     </label>
     <label>Target
       <select name="target_page_id">
+        <option value="blank">(blank page)</option>
         {%- for p in pages %}
         <option value="{{ p['id'] }}">{{ p['title'] }}</option>
         {%- endfor %}
       </select>
     </label>
-    <label>Weight
-      <input name="weight">
+    <label class="weight-field" hidden>Weight
+      <input type="range" name="weight" min="0" max="100" step="1">
     </label>
   </fieldset>
+  <button type="button" onclick="addInitialOption()">Add option</button>
   {% endif %}
   <button type="submit">Save</button>
 </form>
@@ -65,14 +67,17 @@
       </label>
       <label>Target
         <select name="target_page_id">
+          <option value="blank"{% if option['target_page_id'] is none %} selected{% endif %}>(blank page)</option>
           {%- for p in pages %}
           <option value="{{ p['id'] }}"{% if p['id'] == option['target_page_id'] %} selected{% endif %}>{{ p['title'] }}</option>
           {%- endfor %}
         </select>
       </label>
+      {% if page['type'] == 'chance' %}
       <label>Weight
-        <input name="weight" value="{{ option['weight'] if option['weight'] is not none else '' }}">
+        <input type="range" name="weight" min="0" max="100" step="1" value="{{ option['weight'] if option['weight'] is not none else 0 }}">
       </label>
+      {% endif %}
       <button type="submit">Save</button>
     </form>
     <form method="post" action="{{ url_for('admin_delete_option', page_id=page['id'], option_id=option['id']) }}">
@@ -88,14 +93,17 @@
       </label>
       <label>Target
         <select name="target_page_id">
+          <option value="blank">(blank page)</option>
           {%- for p in pages %}
           <option value="{{ p['id'] }}">{{ p['title'] }}</option>
           {%- endfor %}
         </select>
       </label>
+      {% if page['type'] == 'chance' %}
       <label>Weight
-        <input name="weight">
+        <input type="range" name="weight" min="0" max="100" step="1">
       </label>
+      {% endif %}
       <button type="submit">Add</button>
     </form>
   </article>
@@ -108,5 +116,37 @@
     if (!file) return;
     preview.src = URL.createObjectURL(file);
     preview.hidden = false;
+  }
+  function addInitialOption() {
+    const initial = document.querySelector(".initial-option");
+    if (!initial) return;
+    const clone = initial.cloneNode(true);
+    clone.classList.remove("initial-option");
+    clone.classList.add("extra-option");
+    // Reset the field values so the operator fills in fresh values.
+    clone.querySelectorAll("input, select").forEach((el) => {
+      if (el.type === "range") {
+        el.value = el.min || "0";
+      } else {
+        el.value = "";
+      }
+    });
+    initial.parentNode.insertBefore(clone, initial.nextSibling);
+    // Re-sync weight-field visibility on the freshly-added clone.
+    if (typeof typeSelect !== "undefined" && typeSelect) {
+      const isChance = typeSelect.value === "chance";
+      const freshWrapper = clone.querySelector(".weight-field");
+      if (freshWrapper) freshWrapper.hidden = !isChance;
+    }
+  }
+  const weightFields = document.querySelectorAll(".weight-field");
+  const typeSelect = document.querySelector('select[name="type"]');
+  if (typeSelect && weightFields.length) {
+    const sync = () => {
+      const isChance = typeSelect.value === "chance";
+      weightFields.forEach((field) => { field.hidden = !isChance; });
+    };
+    typeSelect.addEventListener("change", sync);
+    sync();
   }
 </script>

@@ -22,6 +22,8 @@ from adventurer.bootstrap import bootstrap_admin
 from adventurer.constants import (
     ALLOWED_IMAGE_TYPES,
     ALLOWED_PAGE_TYPES,
+    BLANK_PAGE_TITLE,
+    BLANK_TARGET,
     ERR_CHOICE_WEIGHT,
     ERR_ENDING_OPTIONS,
     ERR_IMAGE_REQUIRED,
@@ -86,6 +88,81 @@ def _is_upload(file: FileStorage | None) -> bool:
     return file is not None and file.filename is not None and file.filename != ""
 
 
+def _resolve_target_page_id(conn: sqlite3.Connection, raw: str) -> int:
+    """Resolve a target_page_id form value to an integer page id.
+
+    The blank sentinel (``"blank"``) creates a placeholder ending page and
+    returns its id. Any other value is parsed as an integer; the caller
+    handles the case where the id does not exist.
+    """
+    if raw == BLANK_TARGET:
+        cursor = conn.execute(
+            "INSERT INTO pages (type, title, body_text, position) "
+            "VALUES ('ending', ?, '', ?)",
+            (
+                BLANK_PAGE_TITLE,
+                conn.execute(
+                    "SELECT COALESCE(MAX(position), -1) + 1 FROM pages"
+                ).fetchone()[0],
+            ),
+        )
+        return int(cursor.lastrowid or 0)
+    return int(raw)
+
+
+def _create_initial_options(
+    conn: sqlite3.Connection,
+    page_id: int,
+    page_type: str,
+    form: Any,
+) -> None:
+    """Create one option per parallel ``label`` / ``target_page_id`` / ``weight`` slot.
+
+    The new-page form lets the operator attach any number of options by
+    cloning the initial-option fieldset on the client (so each slot
+    contributes parallel list values to the POST). Slots with an empty
+    ``target_page_id`` are skipped silently — they're unfilled fieldsets.
+    Invalid slots are skipped too, so the page itself is still created when
+    one slot is rejected.
+    """
+    labels = form.getlist("label")
+    targets = form.getlist("target_page_id")
+    weights = form.getlist("weight")
+    slot_count = max(len(labels), len(targets), len(weights), 1)
+    existing_sum = 0
+    position = 0
+    for index in range(slot_count):
+        label = labels[index] if index < len(labels) else ""
+        target_raw = (targets[index] if index < len(targets) else "").strip()
+        weight_raw = (weights[index] if index < len(weights) else "").strip()
+        if not target_raw:
+            continue
+        slot_form: dict[str, str] = {
+            "label": label,
+            "target_page_id": target_raw,
+            "weight": weight_raw,
+        }
+        values, _error = _parse_option(
+            conn, page_type, slot_form, existing_sum=existing_sum
+        )
+        if values is None:
+            continue
+        existing_sum += values["weight"] or 0
+        conn.execute(
+            "INSERT INTO options "
+            "(page_id, target_page_id, label, weight, position) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                page_id,
+                values["target_page_id"],
+                values["label"],
+                values["weight"],
+                position,
+            ),
+        )
+        position += 1
+
+
 def _render_page_form(
     page: Any,
     error: str | None,
@@ -115,9 +192,17 @@ def _render_page_form(
 
 
 def _parse_option(
-    page_type: str, form: Any, *, existing_sum: int = 0
+    conn: sqlite3.Connection,
+    page_type: str,
+    form: Any,
+    *,
+    existing_sum: int = 0,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """Validate an option form for ``page_type``; return ``(values, error)``."""
+    """Validate an option form for ``page_type``; return ``(values, error)``.
+
+    ``conn`` is used to materialise a placeholder page when the form picks
+    the blank-target sentinel.
+    """
     if page_type == "ending":
         return None, ERR_ENDING_OPTIONS
     label = form.get("label", "")
@@ -126,7 +211,7 @@ def _parse_option(
     if not target_raw:
         return None, ERR_TARGET_REQUIRED
     try:
-        target_page_id = int(target_raw)
+        target_page_id = _resolve_target_page_id(conn, target_raw)
     except ValueError:
         return None, ERR_TARGET_INTEGER
     if page_type == "choice":
@@ -311,27 +396,12 @@ def create_app() -> Flask:
                 ),
             )
             new_page_id = int(cursor.lastrowid or 0)
-            # A valid initial option (target_page_id provided) is created in
-            # the same transaction so the operator can build a page + its
-            # first option in one POST. Invalid / blank options are silently
-            # skipped — the page is still created and the operator can add
-            # options on the edit page.
-            option_target_raw = (request.form.get("target_page_id") or "").strip()
-            if option_target_raw:
-                values, _error = _parse_option(page_type, request.form)
-                if values is not None:
-                    conn.execute(
-                        "INSERT INTO options "
-                        "(page_id, target_page_id, label, weight, position) "
-                        "VALUES (?, ?, ?, ?, ?)",
-                        (
-                            new_page_id,
-                            values["target_page_id"],
-                            values["label"],
-                            values["weight"],
-                            0,
-                        ),
-                    )
+            # Each parallel label / target_page_id / weight slot in the form
+            # is one initial option, so the operator can attach several
+            # options in the same POST. Slots without a target are skipped
+            # silently; invalid slots are skipped so the page itself still
+            # gets created.
+            _create_initial_options(conn, new_page_id, page_type, request.form)
             conn.commit()
             return redirect(url_for("admin_pages"))
         pages_rows = conn.execute(
@@ -402,7 +472,7 @@ def create_app() -> Flask:
             (page_id,),
         ).fetchone()[0]
         values, error = _parse_option(
-            page["type"], request.form, existing_sum=existing_sum
+            conn, page["type"], request.form, existing_sum=existing_sum
         )
         if values is None:
             return error or "invalid option"
@@ -441,7 +511,7 @@ def create_app() -> Flask:
             (page_id, option_id),
         ).fetchone()[0]
         values, error = _parse_option(
-            page["type"], request.form, existing_sum=existing_sum
+            conn, page["type"], request.form, existing_sum=existing_sum
         )
         if values is None:
             return error or "invalid option"

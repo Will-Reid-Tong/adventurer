@@ -12,6 +12,13 @@ from __future__ import annotations
 PAGE_TYPES = ("choice", "chance", "ending")
 ALLOWED_PAGE_TYPES = frozenset(PAGE_TYPES)
 
+# Sentinel value used by the admin forms to mean "create a placeholder
+# ending page and point this option at it". The dropdowns expose it as
+# ``(blank page)`` so the operator can build options before their targets
+# exist.
+BLANK_TARGET = "blank"
+BLANK_PAGE_TITLE = "(blank)"
+
 # options.weight CHECK plus the chance sum-to-100 rule (schema.sql / Issue #8)
 MIN_WEIGHT = 0
 MAX_WEIGHT = 100
