@@ -176,7 +176,7 @@ def create_app() -> Flask:
                 and check_password_hash(password_hash, request.form.get("password", ""))
             ):
                 session["admin_authenticated"] = True
-                return redirect(url_for("index"))
+                return redirect(url_for("admin_home"))
             return render_template("login.html"), 401
         return render_template("login.html")
 
@@ -186,7 +186,9 @@ def create_app() -> Flask:
         return redirect(url_for("login"))
 
     @app.get("/")
-    def index() -> str:
+    def index() -> Any:
+        if db.get_start_page_id(db.get_db()) is None:
+            return redirect(url_for("login"))
         return render_template("player.html")
 
     @app.get("/api/start")
@@ -244,6 +246,10 @@ def create_app() -> Flask:
             [(option["target_page_id"], option["weight"]) for option in options], rng
         )
         return jsonify({"page_id": target})
+
+    @app.get("/admin")
+    def admin_home() -> Any:
+        return redirect(url_for("admin_pages"))
 
     @app.get("/admin/pages")
     def admin_pages() -> Any:

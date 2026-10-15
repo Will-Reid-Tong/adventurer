@@ -32,6 +32,40 @@ def _redirects_to_login(response: TestResponse) -> bool:
     )
 
 
+def test_login_redirects_to_admin_home(tmp_path: Path, monkeypatch) -> None:
+    db_path = str(tmp_path / "app.db")
+    db.init_db(db_path)
+    with db.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_username', ?)",
+            (ADMIN_USERNAME,),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_password_hash', ?)",
+            (generate_password_hash(ADMIN_PASSWORD),),
+        )
+
+    monkeypatch.setenv("DATABASE_PATH", db_path)
+    client = create_app().test_client()
+
+    # A successful login lands on the admin page, not the player homepage.
+    logged_in = client.post(
+        "/login", data={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD}
+    )
+    assert logged_in.status_code == 302
+    assert urlsplit(logged_in.headers["Location"]).path == "/admin"
+
+    # ``/admin`` is a real admin landing that sends the operator to the pages
+    # list the README advertises as the admin entry point.
+    home = client.get("/admin")
+    assert home.status_code == 302
+    assert urlsplit(home.headers["Location"]).path == "/admin/pages"
+
+    # The guard covers the new route too.
+    client.post("/logout")
+    assert _redirects_to_login(client.get("/admin"))
+
+
 def test_admin_auth_login_logout_guard_seam(tmp_path: Path, monkeypatch) -> None:
     db_path = str(tmp_path / "app.db")
     db.init_db(db_path)
