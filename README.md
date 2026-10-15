@@ -62,3 +62,4 @@ uv run ty check
 - `src/adventurer/` — application package (`create_app()` factory).
 - `tests/` — pytest suite.
 - `docs/decisions.md` — settled design decisions.
+- `GLOSSARY.md` — domain vocabulary.
