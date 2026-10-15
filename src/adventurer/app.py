@@ -191,17 +191,15 @@ def _render_page_form(
     )
 
 
-def _parse_option(
-    conn: sqlite3.Connection,
-    page_type: str,
-    form: Any,
-    *,
-    existing_sum: int = 0,
+def _parse_option_values(
+    conn: sqlite3.Connection, page_type: str, form: Any
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """Validate an option form for ``page_type``; return ``(values, error)``.
+    """Validate one option's own fields for ``page_type``.
 
-    ``conn`` is used to materialise a placeholder page when the form picks
-    the blank-target sentinel.
+    This checks everything local to the option (target, label, weight range)
+    but not the chance page's weights-sum-to-100 rule, which is page-level and
+    therefore checked by the caller. ``conn`` is used to materialise a
+    placeholder page when the form picks the blank-target sentinel.
     """
     if page_type == "ending":
         return None, ERR_ENDING_OPTIONS
@@ -232,13 +230,122 @@ def _parse_option(
         return None, ERR_WEIGHT_INTEGER
     if weight < MIN_WEIGHT or weight > MAX_WEIGHT:
         return None, ERR_WEIGHT_RANGE
-    if existing_sum + weight != WEIGHT_TOTAL:
-        return None, ERR_WEIGHT_SUM
     return {
         "label": label,
         "target_page_id": target_page_id,
         "weight": weight,
     }, None
+
+
+def _parse_option(
+    conn: sqlite3.Connection,
+    page_type: str,
+    form: Any,
+    *,
+    existing_sum: int = 0,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Validate an option form for ``page_type``; return ``(values, error)``.
+
+    ``existing_sum`` is the sum of the page's other options' weights, used to
+    enforce the chance page's weights-sum-to-100 rule.
+    """
+    values, error = _parse_option_values(conn, page_type, form)
+    if values is None:
+        return None, error
+    if page_type == "chance" and existing_sum + values["weight"] != WEIGHT_TOTAL:
+        return None, ERR_WEIGHT_SUM
+    return values, None
+
+
+def _parse_submitted_options(
+    conn: sqlite3.Connection, page_type: str, form: Any
+) -> tuple[list[dict[str, Any]] | None, str | None]:
+    """Parse the page form's parallel option lists into ordered row dicts.
+
+    Each row is ``{"id": option_id | None, "values": {...}}``; an existing
+    option carries its id, a new row does not. A row with neither an id nor a
+    target is a blank new row and is dropped. Returns ``(None, error)`` on the
+    first invalid row.
+    """
+    option_ids = form.getlist("option_id")
+    labels = form.getlist("label")
+    targets = form.getlist("target_page_id")
+    weights = form.getlist("weight")
+    slot_count = max(len(option_ids), len(labels), len(targets), len(weights))
+    rows: list[dict[str, Any]] = []
+    for index in range(slot_count):
+        raw_id = (option_ids[index] if index < len(option_ids) else "").strip()
+        label = labels[index] if index < len(labels) else ""
+        target_raw = (targets[index] if index < len(targets) else "").strip()
+        weight_raw = (weights[index] if index < len(weights) else "").strip()
+        if not raw_id and not target_raw:
+            continue
+        values, error = _parse_option_values(
+            conn,
+            page_type,
+            {"label": label, "target_page_id": target_raw, "weight": weight_raw},
+        )
+        if values is None:
+            return None, error
+        if raw_id:
+            try:
+                option_id: int | None = int(raw_id)
+            except ValueError:
+                return None, "invalid option id"
+        else:
+            option_id = None
+        rows.append({"id": option_id, "values": values})
+    if page_type == "chance" and rows:
+        total = sum(row["values"]["weight"] or 0 for row in rows)
+        if total != WEIGHT_TOTAL:
+            return None, ERR_WEIGHT_SUM
+    return rows, None
+
+
+def _apply_option_rows(
+    conn: sqlite3.Connection, page_id: int, rows: list[dict[str, Any]]
+) -> None:
+    """Persist parsed option rows, inserting new rows in their form order."""
+    submitted_ids = {row["id"] for row in rows if row["id"] is not None}
+    existing_ids = {
+        int(row["id"])
+        for row in conn.execute(
+            "SELECT id FROM options WHERE page_id = ?", (page_id,)
+        ).fetchall()
+    }
+    # An existing option missing from the submitted rows was removed in the form.
+    for option_id in existing_ids - submitted_ids:
+        conn.execute(
+            "DELETE FROM options WHERE id = ? AND page_id = ?", (option_id, page_id)
+        )
+    for position, row in enumerate(rows):
+        values = row["values"]
+        if row["id"] is None:
+            conn.execute(
+                "INSERT INTO options "
+                "(page_id, target_page_id, label, weight, position) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    page_id,
+                    values["target_page_id"],
+                    values["label"],
+                    values["weight"],
+                    position,
+                ),
+            )
+        else:
+            conn.execute(
+                "UPDATE options SET target_page_id = ?, label = ?, weight = ?, "
+                "position = ? WHERE id = ? AND page_id = ?",
+                (
+                    values["target_page_id"],
+                    values["label"],
+                    values["weight"],
+                    position,
+                    row["id"],
+                    page_id,
+                ),
+            )
 
 
 def create_app() -> Flask:
@@ -429,6 +536,24 @@ def create_app() -> Flask:
                     image_id = _insert_image(conn, file)
                 except ImageUploadError as exc:
                     return _render_page_form(page, exc.message, status=exc.status)
+            option_rows, option_error = _parse_submitted_options(
+                conn, page_type, request.form
+            )
+            if option_rows is None:
+                # Reject the whole save: discard the uncommitted placeholder
+                # pages and image upload, then re-render the operator's error.
+                conn.rollback()
+                options_rows = conn.execute(
+                    "SELECT id, target_page_id, label, weight, position FROM options "
+                    "WHERE page_id = ? ORDER BY position, id",
+                    (page_id,),
+                ).fetchall()
+                pages_rows = conn.execute(
+                    "SELECT id, title FROM pages ORDER BY position, id"
+                ).fetchall()
+                return _render_page_form(
+                    page, option_error, options=options_rows, pages=pages_rows
+                )
             conn.execute(
                 "UPDATE pages SET type = ?, title = ?, body_text = ?, image_id = ?, "
                 "updated_at = datetime('now') WHERE id = ?",
@@ -440,6 +565,7 @@ def create_app() -> Flask:
                     page_id,
                 ),
             )
+            _apply_option_rows(conn, page_id, option_rows)
             conn.commit()
             return redirect(url_for("admin_pages"))
         options_rows = conn.execute(

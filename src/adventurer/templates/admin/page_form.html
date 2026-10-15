@@ -54,61 +54,62 @@
   </fieldset>
   <button type="button" onclick="addInitialOption()">Add option</button>
   {% endif %}
+  {% if page and page['type'] != 'ending' %}
+  <section class="options">
+    <h2>Options</h2>
+    <div class="option-rows">
+      {% for option in options %}
+      <article class="option">
+        <input type="hidden" name="option_id" value="{{ option['id'] }}">
+        <label>Label
+          <input name="label" value="{{ option['label'] or '' }}">
+        </label>
+        <label>Target
+          <select name="target_page_id">
+            <option value="blank"{% if option['target_page_id'] is none %} selected{% endif %}>(blank page)</option>
+            {%- for p in pages %}
+            <option value="{{ p['id'] }}"{% if p['id'] == option['target_page_id'] %} selected{% endif %}>{{ p['title'] }}</option>
+            {%- endfor %}
+          </select>
+        </label>
+        {% if page['type'] == 'chance' %}
+        <label>Weight
+          <input type="range" name="weight" min="0" max="100" step="1" value="{{ option['weight'] if option['weight'] is not none else 0 }}">
+        </label>
+        {% endif %}
+        <button type="button" class="remove-option"
+                onclick="removeOption(this)">Remove</button>
+      </article>
+      {% endfor %}
+    </div>
+    <button type="button" onclick="addOption()">Add option</button>
+    <template class="option-template">
+      <article class="option">
+        <input type="hidden" name="option_id" value="">
+        <label>Label
+          <input name="label">
+        </label>
+        <label>Target
+          <select name="target_page_id">
+            <option value="blank">(blank page)</option>
+            {%- for p in pages %}
+            <option value="{{ p['id'] }}">{{ p['title'] }}</option>
+            {%- endfor %}
+          </select>
+        </label>
+        {% if page['type'] == 'chance' %}
+        <label>Weight
+          <input type="range" name="weight" min="0" max="100" step="1" value="0">
+        </label>
+        {% endif %}
+        <button type="button" class="remove-option"
+                onclick="removeOption(this)">Remove</button>
+      </article>
+    </template>
+  </section>
+  {% endif %}
   <button type="submit">Save</button>
 </form>
-{% if page and page['type'] != 'ending' %}
-<section class="options">
-  <h2>Options</h2>
-  {% for option in options %}
-  <article class="option">
-    <form method="post" action="{{ url_for('admin_edit_option', page_id=page['id'], option_id=option['id']) }}">
-      <label>Label
-        <input name="label" value="{{ option['label'] or '' }}">
-      </label>
-      <label>Target
-        <select name="target_page_id">
-          <option value="blank"{% if option['target_page_id'] is none %} selected{% endif %}>(blank page)</option>
-          {%- for p in pages %}
-          <option value="{{ p['id'] }}"{% if p['id'] == option['target_page_id'] %} selected{% endif %}>{{ p['title'] }}</option>
-          {%- endfor %}
-        </select>
-      </label>
-      {% if page['type'] == 'chance' %}
-      <label>Weight
-        <input type="range" name="weight" min="0" max="100" step="1" value="{{ option['weight'] if option['weight'] is not none else 0 }}">
-      </label>
-      {% endif %}
-      <button type="submit">Save</button>
-    </form>
-    <form method="post" action="{{ url_for('admin_delete_option', page_id=page['id'], option_id=option['id']) }}">
-      <button type="submit">Delete</button>
-    </form>
-  </article>
-  {% endfor %}
-  <article class="option-add">
-    <h3>Add option</h3>
-    <form method="post" action="{{ url_for('admin_add_option', page_id=page['id']) }}">
-      <label>Label
-        <input name="label">
-      </label>
-      <label>Target
-        <select name="target_page_id">
-          <option value="blank">(blank page)</option>
-          {%- for p in pages %}
-          <option value="{{ p['id'] }}">{{ p['title'] }}</option>
-          {%- endfor %}
-        </select>
-      </label>
-      {% if page['type'] == 'chance' %}
-      <label>Weight
-        <input type="range" name="weight" min="0" max="100" step="1">
-      </label>
-      {% endif %}
-      <button type="submit">Add</button>
-    </form>
-  </article>
-</section>
-{% endif %}
 <script>
   function previewImage(event) {
     const preview = document.getElementById("image-preview");
@@ -138,6 +139,16 @@
       const freshWrapper = clone.querySelector(".weight-field");
       if (freshWrapper) freshWrapper.hidden = !isChance;
     }
+  }
+  function addOption() {
+    const template = document.querySelector(".option-template");
+    const rows = document.querySelector(".option-rows");
+    if (!template || !rows) return;
+    rows.appendChild(template.content.cloneNode(true));
+  }
+  function removeOption(button) {
+    const row = button.closest(".option");
+    if (row) row.remove();
   }
   const weightFields = document.querySelectorAll(".weight-field");
   const typeSelect = document.querySelector('select[name="type"]');

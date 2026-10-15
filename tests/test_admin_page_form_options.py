@@ -1,15 +1,16 @@
-"""Admin page form: the options panel on create/edit.
+"""Admin page form: the single-form options panel on create/edit.
 
 The page create/edit form is the seam at which the operator sees and mutates
-the page's outgoing options. The backend already has option CRUD endpoints
-(``/admin/pages/<id>/options/...``); these tests pin the rendered HTML that
-ties those endpoints to the form.
+the page's outgoing options. On the edit form a single <form> carries the page
+fields and one row per option, and one Save button persists the whole page:
+the edit endpoint reconciles the submitted option rows (update, insert,
+remove, reorder) atomically. The per-option CRUD endpoints still exist and
+are pinned by ``test_admin_options.py``.
 
-Slice 1 pins the rendered HTML on the edit form: each existing option shows
-inline editable fields (label, target dropdown, weight) with its own save
-and delete buttons, and an "add option" form whose target is a <select> of
-every page. The page-type specific rules (choice vs chance vs ending) and
-the validation behaviour are already pinned by ``test_admin_options.py``.
+These tests pin the rendered HTML (one form, one Save, a Remove button per
+row) and the observable result of a unified save through the HTTP seam. The
+page-type specific rules (choice vs chance vs ending) are pinned by
+``test_admin_options.py``.
 """
 
 from pathlib import Path
@@ -22,7 +23,7 @@ ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "correct horse battery staple"
 
 
-def test_edit_form_renders_existing_options_inline_with_add_form(
+def test_edit_form_is_one_form_with_one_save_and_per_row_remove(
     tmp_path: Path, monkeypatch
 ) -> None:
     db_path = str(tmp_path / "app.db")
@@ -55,20 +56,21 @@ def test_edit_form_renders_existing_options_inline_with_add_form(
 
     html = client.get("/admin/pages/1/edit").get_data(as_text=True)
 
-    # The existing option's label is rendered as the inline edit field value.
+    # One <form> wraps the page fields and every option, so a single Save
+    # button persists the whole page.
+    assert html.count("<form") == 1
+    assert html.count('type="submit"') == 1
+    # Existing options render inline in that form, not as per-option forms.
     assert 'value="Step through"' in html
-    # The option's target is preselected in a <select name="target_page_id">.
-    # Both pages are listed (page 1 itself included; self-targets are allowed).
-    assert html.count('<select name="target_page_id">') >= 2
     assert 'value="1">Open Door' in html
     assert '<option value="2" selected>The End' in html
-    # An inline edit form for the option points at the edit endpoint.
-    assert 'action="/admin/pages/1/options/1/edit"' in html
-    assert 'method="post"' in html
-    # A delete form for the option points at the delete endpoint.
-    assert 'action="/admin/pages/1/options/1/delete"' in html
-    # An "add option" form is present and points at the new-option endpoint.
-    assert 'action="/admin/pages/1/options/new"' in html
+    # Each option row has a Remove button; adding a row is a client-side clone
+    # so the same Save button persists it.
+    assert ">Remove<" in html
+    assert ">Add option<" in html
+    assert "addOption" in html
+    # The old per-option submit endpoints are gone from the page.
+    assert "/options/" not in html
 
 
 def test_edit_form_hides_options_panel_for_ending_page(
@@ -717,3 +719,389 @@ def test_edit_form_add_option_can_be_repeated(tmp_path: Path, monkeypatch) -> No
             "SELECT label, position FROM options WHERE page_id = 1 ORDER BY position"
         ).fetchall()
     assert [row["label"] for row in rows] == ["Go left", "Go right"]
+
+
+# ---------------------------------------------------------------------------
+# Slice: one Save button persists the page and all its options.
+#
+# The edit form is a single <form> carrying the page fields and one option
+# row per option. Submitting it posts the whole page (fields plus parallel
+# ``option_id`` / ``label`` / ``target_page_id`` / ``weight`` lists) to the
+# edit endpoint, which reconciles the option rows in one atomic save. These
+# tests pin the observable result through the HTTP seam.
+# ---------------------------------------------------------------------------
+
+
+def test_edit_page_saves_page_and_existing_option_in_one_request(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = str(tmp_path / "app.db")
+    db.init_db(db_path)
+    with db.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_username', ?)",
+            (ADMIN_USERNAME,),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_password_hash', ?)",
+            (generate_password_hash(ADMIN_PASSWORD),),
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (1, 'choice', 'Open Door', 'A door stands open.', 0)"
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (2, 'ending', 'The End', 'You have arrived.', 1)"
+        )
+        conn.execute(
+            "INSERT INTO options (page_id, target_page_id, label, position) "
+            "VALUES (1, 2, 'Step through', 0)"
+        )
+
+    monkeypatch.setenv("DATABASE_PATH", db_path)
+    client = create_app().test_client()
+    client.post("/login", data={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD})
+
+    response = client.post(
+        "/admin/pages/1/edit",
+        data={
+            "title": "Open Door Renamed",
+            "type": "choice",
+            "body_text": "A door stands wide open.",
+            "option_id": "1",
+            "label": "Walk through",
+            "target_page_id": "2",
+            "weight": "",
+        },
+    )
+    assert response.status_code == 302
+
+    with db.connect(db_path) as conn:
+        page = conn.execute("SELECT title, body_text FROM pages WHERE id = 1").fetchone()
+        option = conn.execute(
+            "SELECT label, target_page_id FROM options WHERE id = 1"
+        ).fetchone()
+    # Both the page fields and the option are saved by the one request.
+    assert (page["title"], page["body_text"]) == (
+        "Open Door Renamed",
+        "A door stands wide open.",
+    )
+    assert (option["label"], option["target_page_id"]) == ("Walk through", 2)
+
+
+def test_edit_page_inserts_new_option_rows_in_order(tmp_path: Path, monkeypatch) -> None:
+    db_path = str(tmp_path / "app.db")
+    db.init_db(db_path)
+    with db.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_username', ?)",
+            (ADMIN_USERNAME,),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_password_hash', ?)",
+            (generate_password_hash(ADMIN_PASSWORD),),
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (1, 'choice', 'Crossroads', 'Two roads diverge.', 0)"
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (2, 'ending', 'The End', 'You have arrived.', 1)"
+        )
+        conn.execute(
+            "INSERT INTO options (page_id, target_page_id, label, position) "
+            "VALUES (1, 2, 'Go left', 0)"
+        )
+
+    monkeypatch.setenv("DATABASE_PATH", db_path)
+    client = create_app().test_client()
+    client.post("/login", data={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD})
+
+    client.post(
+        "/admin/pages/1/edit",
+        data={
+            "title": "Crossroads",
+            "type": "choice",
+            "body_text": "Two roads diverge.",
+            "option_id": ["1", ""],
+            "label": ["Go left", "Go right"],
+            "target_page_id": ["2", "2"],
+            "weight": ["", ""],
+        },
+    )
+
+    with db.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT label, position FROM options WHERE page_id = 1 ORDER BY position, id"
+        ).fetchall()
+    # The blank-id row is a new option; its position follows its row order.
+    assert [(row["label"], row["position"]) for row in rows] == [
+        ("Go left", 0),
+        ("Go right", 1),
+    ]
+
+
+def test_edit_page_removes_options_omitted_from_the_form(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = str(tmp_path / "app.db")
+    db.init_db(db_path)
+    with db.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_username', ?)",
+            (ADMIN_USERNAME,),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_password_hash', ?)",
+            (generate_password_hash(ADMIN_PASSWORD),),
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (1, 'choice', 'Crossroads', 'Two roads diverge.', 0)"
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (2, 'ending', 'The End', 'You have arrived.', 1)"
+        )
+        conn.execute(
+            "INSERT INTO options (id, page_id, target_page_id, label, position) "
+            "VALUES (1, 1, 2, 'Go left', 0)"
+        )
+        conn.execute(
+            "INSERT INTO options (id, page_id, target_page_id, label, position) "
+            "VALUES (2, 1, 2, 'Go right', 1)"
+        )
+
+    monkeypatch.setenv("DATABASE_PATH", db_path)
+    client = create_app().test_client()
+    client.post("/login", data={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD})
+
+    # The operator's Remove button dropped option 1 from the form, so only
+    # option 2 is submitted.
+    client.post(
+        "/admin/pages/1/edit",
+        data={
+            "title": "Crossroads",
+            "type": "choice",
+            "body_text": "Two roads diverge.",
+            "option_id": ["2"],
+            "label": ["Go right"],
+            "target_page_id": ["2"],
+            "weight": [""],
+        },
+    )
+
+    with db.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, label, position FROM options WHERE page_id = 1 "
+            "ORDER BY position, id"
+        ).fetchall()
+    assert [(row["id"], row["label"], row["position"]) for row in rows] == [
+        (2, "Go right", 0)
+    ]
+
+
+def test_edit_page_rejects_an_invalid_option_and_writes_nothing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = str(tmp_path / "app.db")
+    db.init_db(db_path)
+    with db.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_username', ?)",
+            (ADMIN_USERNAME,),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_password_hash', ?)",
+            (generate_password_hash(ADMIN_PASSWORD),),
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (1, 'choice', 'Open Door', 'A door stands open.', 0)"
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (2, 'ending', 'The End', 'You have arrived.', 1)"
+        )
+        conn.execute(
+            "INSERT INTO options (page_id, target_page_id, label, position) "
+            "VALUES (1, 2, 'Step through', 0)"
+        )
+
+    monkeypatch.setenv("DATABASE_PATH", db_path)
+    client = create_app().test_client()
+    client.post("/login", data={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD})
+
+    response = client.post(
+        "/admin/pages/1/edit",
+        data={
+            "title": "Renamed",
+            "type": "choice",
+            "body_text": "Changed.",
+            "option_id": ["1"],
+            "label": [""],
+            "target_page_id": ["2"],
+            "weight": [""],
+        },
+    )
+    assert response.status_code == 200
+    assert b"label is required" in response.data.lower()
+
+    with db.connect(db_path) as conn:
+        page = conn.execute("SELECT title, body_text FROM pages WHERE id = 1").fetchone()
+        option = conn.execute("SELECT label FROM options WHERE page_id = 1").fetchone()
+    # A rejected option rejects the whole save; the page is left untouched.
+    assert (page["title"], page["body_text"]) == ("Open Door", "A door stands open.")
+    assert option["label"] == "Step through"
+
+
+def test_edit_page_saves_chance_weights_that_sum_to_100(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = str(tmp_path / "app.db")
+    db.init_db(db_path)
+    with db.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_username', ?)",
+            (ADMIN_USERNAME,),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_password_hash', ?)",
+            (generate_password_hash(ADMIN_PASSWORD),),
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (1, 'chance', 'Coin Flip', 'Flip a coin.', 0)"
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (2, 'ending', 'Heads', 'Heads.', 1)"
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (3, 'ending', 'Tails', 'Tails.', 2)"
+        )
+
+    monkeypatch.setenv("DATABASE_PATH", db_path)
+    client = create_app().test_client()
+    client.post("/login", data={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD})
+
+    client.post(
+        "/admin/pages/1/edit",
+        data={
+            "title": "Coin Flip",
+            "type": "chance",
+            "body_text": "Flip a coin.",
+            "option_id": ["", ""],
+            "label": ["", ""],
+            "target_page_id": ["2", "3"],
+            "weight": ["60", "40"],
+        },
+    )
+
+    with db.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT target_page_id, weight, position FROM options "
+            "WHERE page_id = 1 ORDER BY position, id"
+        ).fetchall()
+    assert [(row["target_page_id"], row["weight"], row["position"]) for row in rows] == [
+        (2, 60, 0),
+        (3, 40, 1),
+    ]
+
+
+def test_edit_page_rejects_chance_weights_that_do_not_sum_to_100(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = str(tmp_path / "app.db")
+    db.init_db(db_path)
+    with db.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_username', ?)",
+            (ADMIN_USERNAME,),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_password_hash', ?)",
+            (generate_password_hash(ADMIN_PASSWORD),),
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (1, 'chance', 'Coin Flip', 'Flip a coin.', 0)"
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (2, 'ending', 'Heads', 'Heads.', 1)"
+        )
+
+    monkeypatch.setenv("DATABASE_PATH", db_path)
+    client = create_app().test_client()
+    client.post("/login", data={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD})
+
+    response = client.post(
+        "/admin/pages/1/edit",
+        data={
+            "title": "Coin Flip",
+            "type": "chance",
+            "body_text": "Flip a coin.",
+            "option_id": [""],
+            "label": [""],
+            "target_page_id": ["2"],
+            "weight": ["60"],
+        },
+    )
+    assert response.status_code == 200
+    assert b"100" in response.data.lower()
+
+    with db.connect(db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM options WHERE page_id = 1").fetchone()[
+            0
+        ]
+    assert count == 0
+
+
+def test_edit_page_drops_options_when_the_type_becomes_ending(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = str(tmp_path / "app.db")
+    db.init_db(db_path)
+    with db.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_username', ?)",
+            (ADMIN_USERNAME,),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_password_hash', ?)",
+            (generate_password_hash(ADMIN_PASSWORD),),
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (1, 'choice', 'Open Door', 'A door stands open.', 0)"
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (2, 'ending', 'The End', 'You have arrived.', 1)"
+        )
+        conn.execute(
+            "INSERT INTO options (page_id, target_page_id, label, position) "
+            "VALUES (1, 2, 'Step through', 0)"
+        )
+
+    monkeypatch.setenv("DATABASE_PATH", db_path)
+    client = create_app().test_client()
+    client.post("/login", data={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD})
+
+    # Changing the type to ending hides the options panel, so no option rows
+    # are submitted; ending pages must end up with no options at all.
+    response = client.post(
+        "/admin/pages/1/edit",
+        data={"title": "Open Door", "type": "ending", "body_text": "It ends."},
+    )
+    assert response.status_code == 302
+
+    with db.connect(db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM options WHERE page_id = 1").fetchone()[
+            0
+        ]
+    assert count == 0
