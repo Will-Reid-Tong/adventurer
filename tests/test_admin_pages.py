@@ -12,6 +12,7 @@ the test seeds ``admin_username`` / ``admin_password_hash`` through the
 ``adventurer.db`` seam and logs in before touching ``/admin/*``.
 """
 
+import re
 from pathlib import Path
 
 from werkzeug.security import generate_password_hash
@@ -172,9 +173,7 @@ def test_new_page_gets_the_next_position(tmp_path: Path, monkeypatch) -> None:
     ]
 
 
-def test_admin_pages_list_shows_position_and_outgoing_targets(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_admin_pages_list_shows_position(tmp_path: Path, monkeypatch) -> None:
     db_path = str(tmp_path / "app.db")
     db.init_db(db_path)
     with db.connect(db_path) as conn:
@@ -205,9 +204,96 @@ def test_admin_pages_list_shows_position_and_outgoing_targets(
 
     html = client.get("/admin/pages").get_data(as_text=True)
 
-    # Each row shows its position (1-based) so the operator sees where each
-    # page sits in the adventure's order.
+    # Each management row shows its position (1-based) so the operator sees
+    # where each page sits in the adventure's order. Structure itself is read
+    # off the graph above the list, not this flat summary.
     assert "#1" in html and "#2" in html
-    # Open Door's outgoing option points at The End, rendered inline so the
-    # structural relation between pages is visible in the flat list.
-    assert "\u2192 The End" in html
+
+
+def test_admin_pages_view_renders_children_in_parallel(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A choice's children sit side by side beneath it, each linking to its editor.
+
+    Regression: the page list rendered a choice's targets inline as
+    ``-> B -> C``, which reads as B linking to C. The view must use the graph
+    layout instead, so both children land on the same row and each is connected
+    to its parent by its own downward arrow.
+    """
+    db_path = str(tmp_path / "app.db")
+    db.init_db(db_path)
+    with db.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_username', ?)",
+            (ADMIN_USERNAME,),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_password_hash', ?)",
+            (generate_password_hash(ADMIN_PASSWORD),),
+        )
+        conn.execute("INSERT INTO settings (key, value) VALUES ('start_page_id', '1')")
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (1, 'choice', 'Fork', 'Pick a way.', 0)"
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (2, 'ending', 'Left End', 'Left.', 1)"
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (3, 'ending', 'Right End', 'Right.', 2)"
+        )
+        conn.execute(
+            "INSERT INTO options (page_id, target_page_id, label, position) "
+            "VALUES (1, 2, 'Left', 0)"
+        )
+        conn.execute(
+            "INSERT INTO options (page_id, target_page_id, label, position) "
+            "VALUES (1, 3, 'Right', 1)"
+        )
+
+    monkeypatch.setenv("DATABASE_PATH", db_path)
+    client = create_app().test_client()
+    client.post("/login", data={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD})
+
+    html = client.get("/admin/pages").get_data(as_text=True)
+
+    # The structure is drawn as a graph, not a flat list.
+    assert 'class="map__edges"' in html
+
+    cards = {
+        int(page_id): (int(x), int(y))
+        for x, y, page_id in re.findall(
+            r'<a class="node[^>]*?style="left: (\d+)px; top: (\d+)px;[^>]*?'
+            r'href="/admin/pages/(\d+)/edit"',
+            html,
+        )
+    }
+    assert set(cards) == {1, 2, 3}
+
+    # The root sits above its children.
+    assert cards[1][1] < cards[2][1]
+    # The two children share a row (same top), in different columns, so
+    # neither is drawn as connecting to the other.
+    assert cards[2][1] == cards[3][1]
+    assert cards[2][0] != cards[3][0]
+
+    # Every page, children included, links to its editor.
+    for page_id in (1, 2, 3):
+        assert f'href="/admin/pages/{page_id}/edit"' in html
+
+    # The choice owns two connectors: both leave the root and point down to a
+    # child, rather than chaining the children to each other.
+    lines = re.findall(
+        r'<line class="map__edge[^"]*"\s+x1="([\d.]+)" y1="([\d.]+)"\s+'
+        r'x2="([\d.]+)" y2="([\d.]+)"',
+        html,
+    )
+    assert len(lines) == 2
+    assert all(float(y2) > float(y1) for _x1, y1, _x2, y2 in lines)
+    assert len({x1 for x1, _y1, _x2, _y2 in lines}) == 1
+
+    # The old inline "-> target" rendering is gone.
+    assert "\u2192 Left End" not in html
+    assert "\u2192 Right End" not in html

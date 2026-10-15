@@ -351,21 +351,19 @@ def create_app() -> Flask:
     @app.get("/admin/pages")
     def admin_pages() -> Any:
         conn = db.get_db()
+        # The list is for management; the graph above it is how structure is
+        # read. A choice's children sit side by side beneath it rather than
+        # being strung together inline, and every node links to its editor.
+        graph = build_graph(conn)
         pages = conn.execute(
             "SELECT id, type, title, position FROM pages ORDER BY position, id"
         ).fetchall()
-        targets_by_page: dict[int, list[str]] = {}
-        for row in conn.execute(
-            "SELECT o.page_id, p.title FROM options o "
-            "JOIN pages p ON o.target_page_id = p.id "
-            "ORDER BY o.position, o.id"
-        ).fetchall():
-            targets_by_page.setdefault(row["page_id"], []).append(str(row["title"]))
-        pages_with_targets = [
-            {**dict(page), "targets": targets_by_page.get(page["id"], [])}
-            for page in pages
-        ]
-        return render_template("admin/pages_list.html", pages=pages_with_targets)
+        return render_template(
+            "admin/pages_list.html",
+            pages=pages,
+            graph=graph,
+            layout=layout_graph(graph),
+        )
 
     @app.route("/admin/pages/new", methods=["GET", "POST"])
     def admin_new_page() -> Any:
