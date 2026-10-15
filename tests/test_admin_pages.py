@@ -123,3 +123,91 @@ def test_admin_page_crud_seam(tmp_path: Path, monkeypatch) -> None:
         ).fetchone()[0]
     assert page_count == 0
     assert option_count == 0
+
+
+def test_new_page_gets_the_next_position(tmp_path: Path, monkeypatch) -> None:
+    db_path = str(tmp_path / "app.db")
+    db.init_db(db_path)
+    with db.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_username', ?)",
+            (ADMIN_USERNAME,),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_password_hash', ?)",
+            (generate_password_hash(ADMIN_PASSWORD),),
+        )
+        # Existing pages occupy positions 0 and 1 so the next free slot is 2.
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (1, 'choice', 'First', 'First.', 0)"
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (2, 'ending', 'Second', 'Second.', 1)"
+        )
+
+    monkeypatch.setenv("DATABASE_PATH", db_path)
+    client = create_app().test_client()
+    client.post("/login", data={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD})
+
+    client.post(
+        "/admin/pages/new",
+        data={"title": "Third", "type": "choice", "body_text": "Third."},
+    )
+    client.post(
+        "/admin/pages/new",
+        data={"title": "Fourth", "type": "ending", "body_text": "Fourth."},
+    )
+
+    with db.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT title, position FROM pages ORDER BY position"
+        ).fetchall()
+    assert [(row["title"], row["position"]) for row in rows] == [
+        ("First", 0),
+        ("Second", 1),
+        ("Third", 2),
+        ("Fourth", 3),
+    ]
+
+
+def test_admin_pages_list_shows_position_and_outgoing_targets(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = str(tmp_path / "app.db")
+    db.init_db(db_path)
+    with db.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_username', ?)",
+            (ADMIN_USERNAME,),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('admin_password_hash', ?)",
+            (generate_password_hash(ADMIN_PASSWORD),),
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (1, 'choice', 'Open Door', 'A door stands open.', 0)"
+        )
+        conn.execute(
+            "INSERT INTO pages (id, type, title, body_text, position) "
+            "VALUES (2, 'ending', 'The End', 'You have arrived.', 1)"
+        )
+        conn.execute(
+            "INSERT INTO options (page_id, target_page_id, label, position) "
+            "VALUES (1, 2, 'Step through', 0)"
+        )
+
+    monkeypatch.setenv("DATABASE_PATH", db_path)
+    client = create_app().test_client()
+    client.post("/login", data={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD})
+
+    html = client.get("/admin/pages").get_data(as_text=True)
+
+    # Each row shows its position (1-based) so the operator sees where each
+    # page sits in the adventure's order.
+    assert "#1" in html and "#2" in html
+    # Open Door's outgoing option points at The End, rendered inline so the
+    # structural relation between pages is visible in the flat list.
+    assert "\u2192 The End" in html

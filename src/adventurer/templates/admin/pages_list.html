@@ -5,10 +5,14 @@
 <ul>
   {% for page in pages %}
   <li>
+    <span class="position">#{{ page['position'] + 1 }}</span>
     <a href="{{ url_for('admin_edit_page', page_id=page['id']) }}">
       {{ page['title'] }}
     </a>
     <span>{{ page['type'] }}</span>
+    {% for target in page['targets'] %}
+    <span class="target">→ {{ target }}</span>
+    {% endfor %}
     <form method="post" action="{{ url_for('admin_delete_page', page_id=page['id']) }}">
       <button type="submit">Delete</button>
     </form>

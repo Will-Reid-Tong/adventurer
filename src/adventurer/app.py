@@ -255,9 +255,20 @@ def create_app() -> Flask:
     def admin_pages() -> Any:
         conn = db.get_db()
         pages = conn.execute(
-            "SELECT id, type, title FROM pages ORDER BY position, id"
+            "SELECT id, type, title, position FROM pages ORDER BY position, id"
         ).fetchall()
-        return render_template("admin/pages_list.html", pages=pages)
+        targets_by_page: dict[int, list[str]] = {}
+        for row in conn.execute(
+            "SELECT o.page_id, p.title FROM options o "
+            "JOIN pages p ON o.target_page_id = p.id "
+            "ORDER BY o.position, o.id"
+        ).fetchall():
+            targets_by_page.setdefault(row["page_id"], []).append(str(row["title"]))
+        pages_with_targets = [
+            {**dict(page), "targets": targets_by_page.get(page["id"], [])}
+            for page in pages
+        ]
+        return render_template("admin/pages_list.html", pages=pages_with_targets)
 
     @app.route("/admin/pages/new", methods=["GET", "POST"])
     def admin_new_page() -> Any:
@@ -275,13 +286,16 @@ def create_app() -> Flask:
                 except ImageUploadError as exc:
                     return _render_page_form(None, exc.message, status=exc.status)
             conn.execute(
-                "INSERT INTO pages (type, title, body_text, image_id) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO pages (type, title, body_text, image_id, position) "
+                "VALUES (?, ?, ?, ?, ?)",
                 (
                     page_type,
                     request.form.get("title", ""),
                     request.form.get("body_text", ""),
                     image_id,
+                    conn.execute(
+                        "SELECT COALESCE(MAX(position), -1) + 1 FROM pages"
+                    ).fetchone()[0],
                 ),
             )
             conn.commit()
